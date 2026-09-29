@@ -18,9 +18,9 @@
 
 | Mục | Nội dung |
 |-----|----------|
-| Public URL | https://TODO-thay-bang-url-that.up.railway.app |
-| Platform | Render (Blueprint từ `render.yaml`, runtime Docker, plan free) |
-| Ngày deploy | (điền ngày) |
+| Public URL | https://k4-l3b-day12-dotrungtuyen-2a202602427.onrender.com |
+| Platform | Render — Web Service (runtime Docker, build từ `Dockerfile`, plan free) + Render Key Value (Redis) |
+| Ngày deploy | 29/09/2026 |
 
 ## Biến Môi Trường Đã Set Trên Cloud
 
@@ -29,8 +29,8 @@ Ghi tên biến và **nguồn giá trị**, không ghi giá trị:
 | Biến | Đã set | Ghi chú |
 |------|--------|---------|
 | `PORT` | ✅ | platform tự gán |
-| `AGENT_API_KEY` | ✅ | nhập trên dashboard Render lúc tạo Blueprint (`sync: false`), không nằm trong repo |
-| `REDIS_URL` | ✅ | Render Key Value `day12-redis` (khai báo trong `render.yaml`, lấy `connectionString` qua `fromService`) |
+| `AGENT_API_KEY` | ✅ | đặt trong Render dashboard → Environment, không nằm trong repo |
+| `REDIS_URL` | ✅ | Internal URL của Render Key Value (cùng region với web service), đặt trong dashboard → Environment |
 | `RATE_LIMIT_PER_MINUTE` | ✅ | 10 |
 | `MONTHLY_BUDGET_USD` | ✅ | 10.0 |
 | `LOG_LEVEL` | ✅ | INFO |
@@ -72,9 +72,46 @@ done; echo
 
 Dán output của các lệnh trên vào đây:
 
+Chạy ngày 29/09/2026 (lệnh 1–3, trích status line + body):
+
 ```
-(điền output)
+$ curl -i https://k4-l3b-day12-dotrungtuyen-2a202602427.onrender.com/health
+HTTP/1.1 200 OK
+{"status":"ok","service":"day12-agent","version":"1.0.0"}
+
+$ curl -i https://k4-l3b-day12-dotrungtuyen-2a202602427.onrender.com/ready
+HTTP/1.1 200 OK
+{"status":"ready","redis":true}
+
+$ curl -i -X POST https://k4-l3b-day12-dotrungtuyen-2a202602427.onrender.com/ask -H "Content-Type: application/json" -d '{"question":"Hello"}'
+HTTP/1.1 401 Unauthorized
+{"detail":"invalid or missing API key"}
 ```
+
+Lệnh 4–5 (key lấy từ biến môi trường, không ghi ra đây):
+
+```
+# Lệnh 5 — 15 lần liên tiếp, user sv-test
+200 200 200 200 200 200 200 200 200 200 429 429 429 429 429
+
+# Lệnh 4 — sau khi hết cửa sổ 60s, body gửi từ file UTF-8 (--data-binary @body.json)
+HTTP/1.1 200 OK
+{"answer":"Câu hỏi hay. Deploy là gì thường được giải quyết bằng cách chuẩn hóa môi trường chạy: cùng một image chạy giống nhau ở laptop và trên cloud. (Mình đang nhớ 20 lượt trao đổi trước đó.)","user_id":"sv-test","history_length":20,"cost_usd":9.285e-05,"tokens":{"in":439,"out":45}}
+```
+
+Ghi chú: chạy lệnh 4 nguyên văn (`-d '{"question":"Deploy là gì?"}'`) trong Git Bash trên Windows trả
+`400 {"detail":"There was an error parsing the body"}` vì chữ tiếng Việt không được gửi dưới dạng UTF-8;
+gửi body từ file UTF-8 thì trả 200. `history_length` = 20 vì lịch sử bị cắt còn 20 message gần nhất.
+
+`pytest tests/test_cp5.py -v` (có `DEPLOY_API_KEY` trong `.env` ở máy): **9 passed, 4 skipped** (4 test chỉ dành cho LOCAL_FALLBACK).
+
+Sự cố gặp khi deploy và cách sửa:
+
+| Lần | Triệu chứng | Nguyên nhân | Cách sửa |
+|-----|-------------|-------------|----------|
+| 1 | `/health` 200 nhưng `/ready` và `/ask` (không key) trả 500 | Chưa set `AGENT_API_KEY` → `Settings` ném `ValidationError` khi `/ready`, `/ask` đọc cấu hình | Thêm `AGENT_API_KEY` trong Environment |
+| 2 | `/ask` không key → 401 (đúng), nhưng `/ready` 503 `{"status":"not ready","redis":false}` | `REDIS_URL` trỏ `localhost` — trên Render không có Redis ở localhost | Tạo Render Key Value, đặt `REDIS_URL` = Internal URL, redeploy |
+| 3 | `/health` 200, `/ready` 200, `/ask` không key 401 | — | Hoạt động đúng |
 
 ## Ảnh Chụp Màn Hình
 
@@ -82,20 +119,3 @@ Dán output của các lệnh trên vào đây:
 
 - `screenshots/dashboard.png` — trang quản lý service trên platform
 - `screenshots/health.png` — kết quả gọi `/health` từ trình duyệt hoặc curl
-
----
-
-## Nếu Dùng Phương Án Dự Phòng
-
-Không đăng ký được tài khoản cloud? Vẫn nộp được bài, nhưng CP5 tối đa 60% điểm:
-
-1. Đặt `LOCAL_FALLBACK=true` trong `.env`
-2. Chạy `docker compose up -d` rồi kiểm tra `docker compose ps`
-3. Chụp màn hình vào `screenshots/`
-4. Chạy `pytest tests/test_cp5.py -v` — bộ test sẽ tự chuyển sang kiểm tra
-   `http://localhost:8000`
-5. Ghi rõ lý do không deploy được vào phần dưới đây:
-
-```
-(điền lý do nếu dùng phương án dự phòng, ngược lại xóa mục này)
-```
