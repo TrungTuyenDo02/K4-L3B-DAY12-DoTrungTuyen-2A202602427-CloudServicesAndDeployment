@@ -1,0 +1,54 @@
+# CI/CD: mỗi lần push/PR vào main → chạy test + build image;
+# chỉ khi cả hai xanh VÀ là push lên main thì mới deploy lên Render.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cài dependency
+        run: pip install -r requirements.txt
+
+      # Bỏ test_cp5 (cần bản deploy sống) và test_bonus_cicd (tự kiểm tra badge của chính workflow này)
+      - name: Chạy pytest
+        run: pytest tests/ -v --ignore=tests/test_cp5.py --ignore=tests/test_bonus_cicd.py
+        env:
+          AGENT_API_KEY: ci-dummy   # giá trị giả, máy CI không có .env
+          REDIS_URL: "fake://"
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t day12-agent:ci .
+
+  deploy:
+    name: deploy
+    needs: [test, build]   # chỉ chạy khi test và build đều xanh
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      # Deploy Hook là URL bí mật, lưu trong GitHub Secrets
+      - name: Gọi Render Deploy Hook
+        run: curl -fsS -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+
+      - name: Smoke test
+        run: |
+          sleep 45
+          curl -fsS "${{ vars.PUBLIC_URL }}/health"
