@@ -37,9 +37,9 @@ services:
 
   agent:
     build: .
-    # 1 instance. Muốn --scale agent=3 thì cần dải cổng hoặc nginx đứng trước
+    # Dải cổng: 1 instance vẫn ra 8000; --scale agent=3 thì mỗi instance một cổng 8000–8002
     ports:
-      - "8000:8000"
+      - "8000-8002:8000"
     environment:
       AGENT_API_KEY: ${AGENT_API_KEY}   # compose đọc từ .env, không viết thẳng khóa
       REDIS_URL: redis://redis:6379/0   # tên service `redis` chính là hostname
@@ -55,6 +55,17 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # Load balancer (mở rộng tùy chọn): round-robin tới mọi container `agent`
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      agent:
+        condition: service_healthy
 
 volumes:
   redis-data:
